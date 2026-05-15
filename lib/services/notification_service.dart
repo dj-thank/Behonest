@@ -50,9 +50,7 @@ class NotificationService {
       if (token != null) {
         await _saveToken(uid, token);
       }
-    } catch (_) {
-      // APNsや通知権限の設定が未完了でも、アプリ本体は使えるようにする。
-    }
+    } catch (_) {}
 
     await _tokenRefreshSubscription?.cancel();
     _tokenRefreshSubscription = _messaging.onTokenRefresh.listen((newToken) {
@@ -61,16 +59,6 @@ class NotificationService {
   }
 
   Future<void> _requestPermission() async {
-    await _safeRequestPermission();
-
-    await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-  }
-
-  Future<void> _safeRequestPermission() async {
     try {
       await _messaging.requestPermission(
         alert: true,
@@ -78,10 +66,13 @@ class NotificationService {
         sound: true,
         provisional: false,
       );
-    } catch (_) {
-      // Androidの一部環境では明示パーミッション前でも例外にならないが、
-      // 権限ダイアログやAPNs設定の差で失敗してもアプリ自体は起動させる。
-    }
+    } catch (_) {}
+
+    await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
   }
 
   Future<void> _initLocalNotifications() async {
@@ -93,7 +84,7 @@ class NotificationService {
     );
 
     await _localNotifications.initialize(
-      settings,
+      settings: settings,
       onDidReceiveNotificationResponse: (response) {
         final payload = response.payload;
         if (payload == null || payload.isEmpty) return;
@@ -139,10 +130,10 @@ class NotificationService {
     final body = message.notification?.body ?? '今の旅の空気を撮ろう';
 
     await _localNotifications.show(
-      message.hashCode,
-      title,
-      body,
-      NotificationDetails(
+      id: message.hashCode,
+      title: title,
+      body: body,
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
           sound.androidChannelId,
           sound.label,

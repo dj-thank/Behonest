@@ -11,6 +11,8 @@ fi
 
 flutter create --org app.behonest --project-name be_honest "$APP_DIR"
 
+rm -f "$APP_DIR/test/widget_test.dart"
+
 rsync -a "$STARTER_DIR/lib/" "$APP_DIR/lib/"
 rsync -a "$STARTER_DIR/assets/" "$APP_DIR/assets/"
 rsync -a "$STARTER_DIR/functions/" "$APP_DIR/functions/"
