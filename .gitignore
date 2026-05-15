@@ -1,0 +1,13 @@
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+coverage/
+.firebase/
+node_modules/
+functions/lib/
+*.iml
+.DS_Store
+firebase-debug.log
+firebase-debug.*.log

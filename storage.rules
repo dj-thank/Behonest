@@ -1,0 +1,39 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isTripMember(tripId) {
+      return signedIn()
+        && request.auth.uid in firestore.get(
+          /databases/(default)/documents/trips/$(tripId)
+        ).data.memberIds;
+    }
+
+    function hasPosted(tripId, momentId) {
+      return signedIn()
+        && firestore.exists(
+          /databases/(default)/documents/trips/$(tripId)/moments/$(momentId)/posts/$(request.auth.uid)
+        );
+    }
+
+    match /trips/{tripId}/moments/{momentId}/posts/{userId}/{fileName} {
+      allow read: if isTripMember(tripId)
+        && (request.auth.uid == userId || hasPosted(tripId, momentId));
+
+      allow write: if isTripMember(tripId)
+        && request.auth.uid == userId
+        && firestore.get(
+          /databases/(default)/documents/trips/$(tripId)/moments/$(momentId)
+        ).data.status == 'active'
+        && firestore.get(
+          /databases/(default)/documents/trips/$(tripId)/moments/$(momentId)
+        ).data.expiresAt > request.time
+        && request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+  }
+}

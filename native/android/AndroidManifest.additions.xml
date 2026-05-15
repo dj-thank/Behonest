@@ -1,0 +1,18 @@
+<!-- android/app/src/main/AndroidManifest.xml に追加する内容 -->
+
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.CAMERA" />
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+<uses-permission android:name="android.permission.WAKE_LOCK" />
+
+<uses-feature
+    android:name="android.hardware.camera"
+    android:required="false" />
+<uses-feature
+    android:name="android.hardware.camera.front"
+    android:required="false" />
+
+<!-- applicationタグ内に入れる。FlutterFireが自動追加する場合もあります。 -->
+<meta-data
+    android:name="com.google.firebase.messaging.default_notification_channel_id"
+    android:value="be_honest_honest_ping_v2" />

@@ -1,0 +1,102 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isTripMember(tripId) {
+      return signedIn()
+        && request.auth.uid in get(/databases/$(database)/documents/trips/$(tripId)).data.memberIds;
+    }
+
+    function isTripOwner(tripId) {
+      return signedIn()
+        && get(/databases/$(database)/documents/trips/$(tripId)).data.ownerId == request.auth.uid;
+    }
+
+    function hasPosted(tripId, momentId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/trips/$(tripId)/moments/$(momentId)/posts/$(request.auth.uid));
+    }
+
+    function validSoundKey(key) {
+      return key in ['honest_ping', 'travel_bell', 'camera_pop'];
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly([
+          'displayName', 'selectedSoundKey', 'createdAt', 'updatedAt'
+        ])
+        && (!request.resource.data.keys().hasAny(['selectedSoundKey'])
+          || validSoundKey(request.resource.data.selectedSoundKey));
+      allow update: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'selectedSoundKey', 'updatedAt'
+        ])
+        && (!request.resource.data.keys().hasAny(['selectedSoundKey'])
+          || validSoundKey(request.resource.data.selectedSoundKey));
+      allow delete: if false;
+
+      match /tokens/{tokenId} {
+        allow read, create, update, delete: if signedIn() && request.auth.uid == userId;
+      }
+    }
+
+    match /trips/{tripId} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'name', 'ownerId', 'inviteCode', 'memberIds', 'active',
+          'startDate', 'endDate', 'timezone', 'dailyMomentCount',
+          'captureWindowMinutes', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.ownerId == request.auth.uid
+        && request.auth.uid in request.resource.data.memberIds
+        && request.resource.data.memberIds.size() == 1
+        && request.resource.data.dailyMomentCount >= 1
+        && request.resource.data.dailyMomentCount <= 3
+        && request.resource.data.captureWindowMinutes >= 2
+        && request.resource.data.captureWindowMinutes <= 60;
+
+      allow read: if isTripMember(tripId);
+
+      allow update: if isTripOwner(tripId)
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.inviteCode == resource.data.inviteCode
+        && request.resource.data.memberIds == resource.data.memberIds
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name', 'active', 'startDate', 'endDate', 'timezone',
+          'dailyMomentCount', 'captureWindowMinutes', 'updatedAt'
+        ]);
+
+      allow delete: if isTripOwner(tripId);
+
+      match /moments/{momentId} {
+        allow read: if isTripMember(tripId);
+        allow create, update, delete: if false;
+
+        match /posts/{userId} {
+          allow read: if isTripMember(tripId)
+            && (request.auth.uid == userId || hasPosted(tripId, momentId));
+
+          allow create, update: if isTripMember(tripId)
+            && request.auth.uid == userId
+            && request.resource.data.uid == request.auth.uid
+            && request.resource.data.keys().hasOnly([
+              'uid', 'displayName', 'frontImageUrl', 'backImageUrl',
+              'combinedImageUrl', 'createdAt', 'createdAtClient', 'captureOrder'
+            ])
+            && get(/databases/$(database)/documents/trips/$(tripId)/moments/$(momentId)).data.status == 'active'
+            && get(/databases/$(database)/documents/trips/$(tripId)/moments/$(momentId)).data.expiresAt > request.time;
+
+          allow delete: if isTripMember(tripId) && request.auth.uid == userId;
+        }
+      }
+    }
+  }
+}
