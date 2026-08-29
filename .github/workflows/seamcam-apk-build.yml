@@ -49,13 +49,14 @@ jobs:
           echo "44496b77f31be5acf8412b6ffe1863fdab04c7debb118282100fcbd85554068e  /tmp/seamcam.tar.xz" | sha256sum -c -
           mkdir -p /tmp/seamcam-build
           tar -xJf /tmp/seamcam.tar.xz -C /tmp/seamcam-build
-          test -f /tmp/seamcam-build/android/settings.gradle.kts
-          sed -i 's/compileSdk = 37/compileSdk = 36/; s/targetSdk = 37/targetSdk = 36/' /tmp/seamcam-build/android/app/build.gradle.kts
-          grep -q 'compileSdk = 36' /tmp/seamcam-build/android/app/build.gradle.kts
-          grep -q 'targetSdk = 36' /tmp/seamcam-build/android/app/build.gradle.kts
+          PROJECT=/tmp/seamcam-build/seamcam_android_runtime/android
+          test -f "$PROJECT/settings.gradle.kts"
+          sed -i 's/compileSdk = 37/compileSdk = 36/; s/targetSdk = 37/targetSdk = 36/' "$PROJECT/app/build.gradle.kts"
+          grep -q 'compileSdk = 36' "$PROJECT/app/build.gradle.kts"
+          grep -q 'targetSdk = 36' "$PROJECT/app/build.gradle.kts"
 
       - name: Build debug APK
-        working-directory: /tmp/seamcam-build/android
+        working-directory: /tmp/seamcam-build/seamcam_android_runtime/android
         shell: bash
         run: gradle --no-daemon --stacktrace assembleDebug
 
@@ -63,7 +64,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APK=/tmp/seamcam-build/android/app/build/outputs/apk/debug/app-debug.apk
+          APK=/tmp/seamcam-build/seamcam_android_runtime/android/app/build/outputs/apk/debug/app-debug.apk
           SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
           test -f "$APK"
           unzip -t "$APK"
