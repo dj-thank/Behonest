@@ -1,0 +1,78 @@
+name: SeamCam APK Build
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "build-inputs/seamcam-20260829/**"
+      - ".github/workflows/seamcam-apk-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 37
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-37" "build-tools;36.0.0" "platform-tools"
+
+      - name: Set up Gradle 9.5.0
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Restore source and verify transport checksum
+        shell: bash
+        run: |
+          cat build-inputs/seamcam-20260829/source.part.* | base64 -d > /tmp/seamcam.tar.xz
+          echo "44496b77f31be5acf8412b6ffe1863fdab04c7debb118282100fcbd85554068e  /tmp/seamcam.tar.xz" | sha256sum -c -
+          mkdir -p /tmp/seamcam-build
+          tar -xJf /tmp/seamcam.tar.xz -C /tmp/seamcam-build
+          test -f /tmp/seamcam-build/android/settings.gradle.kts
+
+      - name: Build debug APK
+        working-directory: /tmp/seamcam-build/android
+        shell: bash
+        run: gradle --no-daemon --stacktrace assembleDebug
+
+      - name: Verify APK and signing certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=/tmp/seamcam-build/android/app/build/outputs/apk/debug/app-debug.apk
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          test -f "$APK"
+          unzip -t "$APK"
+          sha256sum "$APK" | tee /tmp/SeamCam-Android-debug.sha256
+          "$SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/SeamCam-Android-debug-signature.txt
+          cp "$APK" /tmp/SeamCam-Android-debug.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SeamCam-Android-debug
+          path: |
+            /tmp/SeamCam-Android-debug.apk
+            /tmp/SeamCam-Android-debug.sha256
+            /tmp/SeamCam-Android-debug-signature.txt
+          if-no-files-found: error
+          retention-days: 7
