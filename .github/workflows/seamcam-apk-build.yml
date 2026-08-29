@@ -42,7 +42,7 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Restore source and apply API 36 compatibility set
+      - name: Restore source and apply build fixes
         shell: bash
         run: |
           cat build-inputs/seamcam-20260829/source.part.* | base64 -d > /tmp/seamcam.tar.xz
@@ -53,11 +53,47 @@ jobs:
           test -f "$PROJECT/settings.gradle.kts"
           sed -i 's/compileSdk = 37/compileSdk = 36/; s/targetSdk = 37/targetSdk = 36/' "$PROJECT/app/build.gradle.kts"
           sed -i 's/core = "1.19.0"/core = "1.18.0"/; s/lifecycle = "2.11.0"/lifecycle = "2.10.0"/; s/composeBom = "2026.08.00"/composeBom = "2026.05.00"/' "$PROJECT/gradle/libs.versions.toml"
+          CAMERA_SCREEN="$PROJECT/app/src/main/java/app/seamcam/camera/ui/CameraScreen.kt"
+          python3 - "$CAMERA_SCREEN" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          source = path.read_text()
+          source = source.replace("import androidx.compose.foundation.layout.weight\n", "")
+          source = source.replace(
+              "import androidx.compose.ui.draw.graphicsLayer\n",
+              "import androidx.compose.ui.graphics.graphicsLayer\n",
+          )
+          old = """@Composable
+          private fun CountdownOverlay(seconds: Int, onCancel: () -> Unit) {
+              Surface(
+                  modifier = Modifier
+                      .size(150.dp)
+                      .clickable(role = Role.Button, onClick = onCancel)
+                      .semantics { contentDescription = stringResource(R.string.cancel_timer) },
+          """
+          new = """@Composable
+          private fun CountdownOverlay(seconds: Int, onCancel: () -> Unit) {
+              val cancelDescription = stringResource(R.string.cancel_timer)
+              Surface(
+                  modifier = Modifier
+                      .size(150.dp)
+                      .clickable(role = Role.Button, onClick = onCancel)
+                      .semantics { contentDescription = cancelDescription },
+          """
+          if old not in source:
+              raise SystemExit("CountdownOverlay source pattern not found")
+          path.write_text(source.replace(old, new))
+          PY
           grep -q 'compileSdk = 36' "$PROJECT/app/build.gradle.kts"
           grep -q 'targetSdk = 36' "$PROJECT/app/build.gradle.kts"
           grep -q 'core = "1.18.0"' "$PROJECT/gradle/libs.versions.toml"
           grep -q 'lifecycle = "2.10.0"' "$PROJECT/gradle/libs.versions.toml"
           grep -q 'composeBom = "2026.05.00"' "$PROJECT/gradle/libs.versions.toml"
+          grep -q 'import androidx.compose.ui.graphics.graphicsLayer' "$CAMERA_SCREEN"
+          ! grep -q 'import androidx.compose.foundation.layout.weight' "$CAMERA_SCREEN"
+          grep -q 'contentDescription = cancelDescription' "$CAMERA_SCREEN"
 
       - name: Build debug APK
         working-directory: /tmp/seamcam-build/seamcam_android_runtime/android
