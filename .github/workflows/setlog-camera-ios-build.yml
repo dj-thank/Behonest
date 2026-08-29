@@ -1,0 +1,100 @@
+name: SetLog Camera iOS Build
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "build-inputs/setlog-ios-20260829/**"
+      - ".github/workflows/setlog-camera-ios-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: xcode-27
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        shell: bash
+        run: xcodebuild -version
+
+      - name: Restore and verify source
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+          import hashlib
+          import tarfile
+
+          parts = sorted(Path('build-inputs/setlog-ios-20260829').glob('source.part.*'))
+          if len(parts) != 8:
+              raise SystemExit(f'expected 8 source parts, found {len(parts)}')
+          encoded = b''.join(path.read_bytes() for path in parts)
+          archive = base64.b64decode(encoded, validate=True)
+          digest = hashlib.sha256(archive).hexdigest()
+          expected = 'aa17265e1a618cbc314f3cf51a361815a4a5c33805927e0caf305aee26e96141'
+          if digest != expected:
+              raise SystemExit(f'archive checksum mismatch: {digest}')
+          archive_path = Path('/tmp/setlog-ios.tar.xz')
+          archive_path.write_bytes(archive)
+          destination = Path('/tmp/setlog-ios-build')
+          destination.mkdir(parents=True, exist_ok=True)
+          with tarfile.open(archive_path, mode='r:xz') as tar:
+              tar.extractall(destination, filter='data')
+          project = destination / 'ios' / 'SetLogCamera.xcworkspace'
+          if not project.exists():
+              raise SystemExit(f'missing workspace: {project}')
+          print(f'verified {digest}')
+          PY
+
+      - name: Validate project metadata
+        shell: bash
+        run: |
+          plutil -lint /tmp/setlog-ios-build/ios/SetLogCamera/Resources/Info.plist
+          plutil -lint /tmp/setlog-ios-build/ios/SetLogCamera/Resources/PrivacyInfo.xcprivacy
+          plutil -lint /tmp/setlog-ios-build/ios/SetLogCamera.xcodeproj/project.pbxproj
+
+      - name: Build for iOS Simulator
+        working-directory: /tmp/setlog-ios-build/ios
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -workspace SetLogCamera.xcworkspace \
+            -scheme SetLogCamera \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/setlog-derived \
+            CODE_SIGNING_ALLOWED=NO \
+            build-for-testing \
+            | tee /tmp/SetLog-Camera-iOS-build.log
+
+      - name: Package source and simulator build
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="/tmp/setlog-derived/Build/Products/Debug-iphonesimulator/SetLogCamera.app"
+          test -d "$APP"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" /tmp/SetLog-Camera-iOS-Simulator.app.zip
+          ditto -c -k --sequesterRsrc --keepParent /tmp/setlog-ios-build/ios /tmp/SetLog-Camera-iOS-Source.zip
+          shasum -a 256 /tmp/SetLog-Camera-iOS-Simulator.app.zip /tmp/SetLog-Camera-iOS-Source.zip \
+            | tee /tmp/SetLog-Camera-iOS-SHA256.txt
+
+      - name: Upload iOS build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SetLog-Camera-iOS
+          path: |
+            /tmp/SetLog-Camera-iOS-Simulator.app.zip
+            /tmp/SetLog-Camera-iOS-Source.zip
+            /tmp/SetLog-Camera-iOS-SHA256.txt
+            /tmp/SetLog-Camera-iOS-build.log
+          if-no-files-found: error
+          retention-days: 7
