@@ -1,0 +1,80 @@
+name: SetLog Camera APK Build
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "build-inputs/setlog-20260829/**"
+      - ".github/workflows/setlog-camera-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android API 36
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Set up Gradle 9.5.0
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Restore and verify source
+        shell: bash
+        run: |
+          cat build-inputs/setlog-20260829/source.part.* | base64 -d > /tmp/setlog-android.tar.xz
+          echo "b9e7671991ce55a383c9ae4e1866cc02bd73400250e5e9a33beb4fa6d4164539  /tmp/setlog-android.tar.xz" | sha256sum -c -
+          mkdir -p /tmp/setlog-build
+          tar -xJf /tmp/setlog-android.tar.xz -C /tmp/setlog-build
+          test -f /tmp/setlog-build/android/settings.gradle.kts
+
+      - name: Build debug APK
+        working-directory: /tmp/setlog-build/android
+        shell: bash
+        run: gradle --no-daemon --stacktrace assembleDebug
+
+      - name: Verify APK and signing certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=/tmp/setlog-build/android/app/build/outputs/apk/debug/app-debug.apk
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          test -f "$APK"
+          unzip -t "$APK"
+          sha256sum "$APK" | tee /tmp/SetLog-Camera-Android-debug.sha256
+          "$SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/SetLog-Camera-Android-debug-signature.txt
+          cp "$APK" /tmp/SetLog-Camera-Android-debug.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SetLog-Camera-Android-debug
+          path: |
+            /tmp/SetLog-Camera-Android-debug.apk
+            /tmp/SetLog-Camera-Android-debug.sha256
+            /tmp/SetLog-Camera-Android-debug-signature.txt
+          if-no-files-found: error
+          retention-days: 7
