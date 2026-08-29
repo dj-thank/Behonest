@@ -54,6 +54,25 @@ jobs:
           print(f'verified {digest}')
           PY
 
+      - name: Apply reviewed source corrections
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('/tmp/setlog-ios-build/ios/SetLogCamera/UI/CameraRootView.swift')
+          source = path.read_text()
+          source = source.replace('                        body: String(localized: "guide.', '                        detail: String(localized: "guide.')
+          source = source.replace(
+              '    let body: String\n    let symbol: String\n\n    var body: some View {',
+              '    let detail: String\n    let symbol: String\n\n    var body: some View {'
+          )
+          source = source.replace('                Text(body)\n', '                Text(detail)\n')
+          if 'let detail: String' not in source or 'Text(detail)' not in source:
+              raise SystemExit('GuideRow correction failed')
+          path.write_text(source)
+          PY
+
       - name: Validate project metadata
         shell: bash
         run: |
